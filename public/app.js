@@ -1,7 +1,12 @@
-const socket = io();
-
 // Application State
-let playerId = null;
+let playerId = sessionStorage.getItem('hilo_player_id');
+if (!playerId) {
+  playerId = 'p_' + Math.random().toString(36).substr(2, 9);
+  sessionStorage.setItem('hilo_player_id', playerId);
+}
+
+let db = null;
+let roomRef = null;
 let currentRoom = null;
 let selectedRange = { min: 1, max: 100 };
 
@@ -78,6 +83,74 @@ if (localStorage.getItem('hilo_nickname')) {
 }
 
 // -------------------------------------------------------------
+// Firebase Initialization & Syncing
+// -------------------------------------------------------------
+
+async function initFirebase() {
+  try {
+    const res = await fetch('/api/config');
+    const config = await res.json();
+
+    if (!config.apiKey || !config.databaseURL) {
+      showToast("Firebase is not configured! Add credentials to Vercel env.");
+      return;
+    }
+
+    firebase.initializeApp(config);
+    db = firebase.database();
+
+    // Check if we arrived via a share link
+    const urlParams = new URLSearchParams(window.location.search);
+    const sharedRoomCode = urlParams.get('room');
+    if (sharedRoomCode) {
+      showScreen('join');
+      roomCodeInput.value = sharedRoomCode.trim().toUpperCase();
+      showToast("Joined via shared room link!");
+    }
+  } catch (error) {
+    console.error("Firebase initialization failed:", error);
+    showToast("Failed to load game server configurations.");
+  }
+}
+
+function subscribeToRoom(roomId) {
+  if (!db) return;
+
+  if (roomRef) {
+    roomRef.off();
+  }
+
+  roomRef = db.ref('rooms/' + roomId);
+  roomRef.on('value', (snapshot) => {
+    const state = snapshot.val();
+    if (state) {
+      currentRoom = state;
+      renderGame(state);
+      setupDisconnectHandler(roomId, state);
+    }
+  });
+}
+
+function setupDisconnectHandler(roomId, roomState) {
+  if (!db) return;
+
+  const isP1 = roomState.player1 && roomState.player1.id === playerId;
+  const isP2 = roomState.player2 && roomState.player2.id === playerId;
+
+  if (!isP1 && !isP2) return;
+
+  const playerKey = isP1 ? 'player1' : 'player2';
+
+  // Mark player as disconnected on database if connection drops
+  db.ref(`rooms/${roomId}/${playerKey}/connected`).onDisconnect().set(false);
+  // Transition room status to disconnected
+  db.ref(`rooms/${roomId}/status`).onDisconnect().set('disconnected');
+}
+
+// Kick off Firebase Setup
+initFirebase();
+
+// -------------------------------------------------------------
 // UI Utilities & Transitions
 // -------------------------------------------------------------
 
@@ -115,7 +188,7 @@ rangeBtns.forEach(btn => {
 });
 
 // -------------------------------------------------------------
-// Navigation & Input Validation Actions
+// Navigation & Input Validation Actions (REST requests)
 // -------------------------------------------------------------
 
 function getCleanName() {
@@ -130,11 +203,26 @@ function getCleanName() {
   return name;
 }
 
-btnCreateGame.addEventListener('click', () => {
+btnCreateGame.addEventListener('click', async () => {
   const name = getCleanName();
   if (!name) return;
 
-  socket.emit('create_room', { name, range: selectedRange });
+  try {
+    const res = await fetch('/api/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, range: selectedRange, playerId })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.message || "Failed to create room.");
+      return;
+    }
+    subscribeToRoom(data.roomId);
+    showScreen('lobby');
+  } catch (err) {
+    showToast("Network error creating room.");
+  }
 });
 
 btnShowJoin.addEventListener('click', () => {
@@ -148,7 +236,7 @@ btnBackToLanding.addEventListener('click', () => {
   showScreen('landing');
 });
 
-btnJoinRoom.addEventListener('click', () => {
+btnJoinRoom.addEventListener('click', async () => {
   const name = getCleanName();
   if (!name) return;
 
@@ -160,7 +248,22 @@ btnJoinRoom.addEventListener('click', () => {
     return;
   }
 
-  socket.emit('join_room', { name, roomId: code });
+  try {
+    const res = await fetch('/api/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, roomId: code, playerId })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.message || "Failed to join room.");
+      return;
+    }
+    subscribeToRoom(data.roomId);
+    showScreen('lobby');
+  } catch (err) {
+    showToast("Network error joining room.");
+  }
 });
 
 // Copy Room Code to Clipboard
@@ -194,17 +297,29 @@ btnShareCode.addEventListener('click', () => {
 // -------------------------------------------------------------
 
 // Auto select helper
-btnAutoSelect.addEventListener('click', () => {
+btnAutoSelect.addEventListener('click', async () => {
   if (!currentRoom) return;
   const min = currentRoom.range.min;
   const max = currentRoom.range.max;
   const randomNum = Math.floor(Math.random() * (max - min + 1)) + min;
   
-  socket.emit('lock_number', { number: randomNum });
+  try {
+    const res = await fetch('/api/lock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomId: currentRoom.roomId, playerId, number: randomNum })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.message || "Failed to lock secret number.");
+    }
+  } catch (err) {
+    showToast("Network error locking secret number.");
+  }
 });
 
 // Manual select helper
-btnLockNumber.addEventListener('click', () => {
+btnLockNumber.addEventListener('click', async () => {
   if (!currentRoom) return;
   const num = parseInt(manualNumberInput.value, 10);
   const min = currentRoom.range.min;
@@ -217,14 +332,26 @@ btnLockNumber.addEventListener('click', () => {
     return;
   }
 
-  socket.emit('lock_number', { number: num });
+  try {
+    const res = await fetch('/api/lock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomId: currentRoom.roomId, playerId, number: num })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.message || "Failed to lock secret number.");
+    }
+  } catch (err) {
+    showToast("Network error locking secret number.");
+  }
 });
 
 // -------------------------------------------------------------
 // Main Game Loop Guessing Actions
 // -------------------------------------------------------------
 
-btnSubmitGuess.addEventListener('click', () => {
+btnSubmitGuess.addEventListener('click', async () => {
   if (!currentRoom) return;
   const guess = parseInt(guessInput.value, 10);
   const min = currentRoom.range.min;
@@ -237,8 +364,21 @@ btnSubmitGuess.addEventListener('click', () => {
     return;
   }
 
-  socket.emit('submit_guess', { guess });
-  guessInput.value = ''; // clear field after submit
+  try {
+    const res = await fetch('/api/guess', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomId: currentRoom.roomId, playerId, guess })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.message || "Failed to submit guess.");
+    } else {
+      guessInput.value = ''; // clear field on success
+    }
+  } catch (err) {
+    showToast("Network error submitting guess.");
+  }
 });
 
 // Allow hitting 'Enter' to submit guess
@@ -249,8 +389,20 @@ guessInput.addEventListener('keypress', (e) => {
 });
 
 // Play Again & Leave handlers
-btnRestartGame.addEventListener('click', () => {
-  socket.emit('restart_game');
+btnRestartGame.addEventListener('click', async () => {
+  try {
+    const res = await fetch('/api/restart', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomId: currentRoom.roomId })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.message || "Failed to restart game.");
+    }
+  } catch (err) {
+    showToast("Network error restarting game.");
+  }
 });
 
 btnLeaveGame.addEventListener('click', () => {
@@ -262,27 +414,8 @@ btnDisconnectRestart.addEventListener('click', () => {
 });
 
 // -------------------------------------------------------------
-// Realtime Socket Observers & Rendering Logic
+// Rendering Loop
 // -------------------------------------------------------------
-
-socket.on('room_created', ({ roomId, playerId: sId }) => {
-  playerId = sId;
-  showScreen('lobby');
-});
-
-socket.on('room_joined', ({ roomId, playerId: sId }) => {
-  playerId = sId;
-  showScreen('lobby');
-});
-
-socket.on('game_error', ({ message }) => {
-  showToast(message);
-});
-
-socket.on('room_state_update', (roomState) => {
-  currentRoom = roomState;
-  renderGame(roomState);
-});
 
 function renderGame(room) {
   // 1. Identify self and opponent players from state
@@ -328,12 +461,12 @@ function renderGame(room) {
     gameP1Name.innerText = me ? `${me.name} (You)` : 'You';
     gameP1Status.innerText = me && me.connected ? 'Connected' : 'Disconnected';
     gameP1Status.className = `connection-status ${me && me.connected ? 'connected' : 'disconnected'}`;
-    gameP1GuessCount.innerText = me ? me.guesses.length : '0';
+    gameP1GuessCount.innerText = me && me.guesses ? Object.keys(me.guesses).length : '0';
 
     gameP2Name.innerText = opponent ? opponent.name : 'Opponent';
     gameP2Status.innerText = opponent && opponent.connected ? 'Connected' : 'Disconnected';
     gameP2Status.className = `connection-status ${opponent && opponent.connected ? 'connected' : 'disconnected'}`;
-    gameP2GuessCount.innerText = opponent ? opponent.guesses.length : '0';
+    gameP2GuessCount.innerText = opponent && opponent.guesses ? Object.keys(opponent.guesses).length : '0';
 
     // Active Turn UI configuration
     const isMyTurn = room.currentTurn === playerId;
@@ -350,8 +483,9 @@ function renderGame(room) {
     }
 
     // Active Feedback banner configuration
-    if (me && me.guesses.length > 0) {
-      const lastGuess = me.guesses[me.guesses.length - 1];
+    const myGuessesArray = me && me.guesses ? Object.values(me.guesses) : [];
+    if (myGuessesArray.length > 0) {
+      const lastGuess = myGuessesArray[myGuessesArray.length - 1];
       guessFeedback.style.display = 'inline-block';
       guessFeedback.className = 'guess-feedback-alert'; // clear extra styling classes
       
@@ -370,8 +504,8 @@ function renderGame(room) {
     }
 
     // Guess History columns rendering
-    renderHistoryList(myHistoryList, me ? me.guesses : []);
-    renderHistoryList(opponentHistoryList, opponent ? opponent.guesses : []);
+    renderHistoryList(myHistoryList, myGuessesArray);
+    renderHistoryList(opponentHistoryList, opponent && opponent.guesses ? Object.values(opponent.guesses) : []);
 
   } else if (room.status === 'finished') {
     showScreen('win');
@@ -387,7 +521,8 @@ function renderGame(room) {
       document.querySelector('.trophy-emoji').innerText = '💀';
     }
 
-    winStatGuesses.innerText = me ? me.guesses.length : '0';
+    const myGuessesArray = me && me.guesses ? Object.values(me.guesses) : [];
+    winStatGuesses.innerText = myGuessesArray.length;
     winStatDuration.innerText = `${room.duration}s`;
 
   } else if (room.status === 'disconnected') {
@@ -402,7 +537,6 @@ function renderHistoryList(element, guesses) {
   
   reversedGuesses.forEach(g => {
     const li = document.createElement('li');
-    
     const badgeClass = g.result.toLowerCase();
     
     li.innerHTML = `
@@ -413,18 +547,3 @@ function renderHistoryList(element, guesses) {
     element.appendChild(li);
   });
 }
-
-// -------------------------------------------------------------
-// Parse Shared Links on Load
-// -------------------------------------------------------------
-window.addEventListener('DOMContentLoaded', () => {
-  const urlParams = new URLSearchParams(window.location.search);
-  const sharedRoomCode = urlParams.get('room');
-  
-  if (sharedRoomCode) {
-    // Navigate straight to join screen and fill in the code
-    showScreen('join');
-    roomCodeInput.value = sharedRoomCode.trim().toUpperCase();
-    showToast("Joined via shared room link!");
-  }
-});
