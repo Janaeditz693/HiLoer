@@ -1,3 +1,4 @@
+// Config handler for serverless Firebase setup
 module.exports = (req, res) => {
   // Allow client CORS for ease of local testing
   res.setHeader('Access-Control-Allow-Origin', '*');
