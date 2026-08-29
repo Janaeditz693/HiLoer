@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="A simple, modern, responsive online 2-player multiplayer Higher or Lower number guessing game.">
+  <title>HIGHER OR LOWER — Multiplayer Game</title>
+  <!-- Google Fonts: Plus Jakarta Sans for premium, clean typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- App Container -->
+  <div id="app" class="app-container">
+    
+    <!-- HEADER -->
+    <header class="game-header">
+      <h1 class="logo">HIGHER OR LOWER</h1>
+      <p class="subtitle">Find your opponent's secret number.</p>
+    </header>
+
+    <!-- MAIN CARD WRAPPER -->
+    <main class="main-card">
+
+      <!-- SCREEN 1: LANDING & NAME ENTRY -->
+      <section id="screen-landing" class="screen active">
+        <div class="form-group">
+          <label for="player-name-input">What's your name?</label>
+          <input type="text" id="player-name-input" placeholder="e.g., Jana" maxlength="15" autocomplete="off">
+        </div>
+
+        <!-- Range Selection Accordion/Details -->
+        <div class="settings-container">
+          <button class="settings-toggle" id="settings-toggle-btn">
+            <span>Game Settings</span>
+            <svg class="chevron-icon" viewBox="0 0 24 24" width="18" height="18"><path d="M7 10l5 5 5-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="settings-content" id="settings-content">
+            <div class="form-group">
+              <label for="range-select">Number Range</label>
+              <div class="range-options">
+                <button type="button" class="range-btn active" data-min="1" data-max="100">1 – 100</button>
+                <button type="button" class="range-btn" data-min="1" data-max="50">1 – 50</button>
+                <button type="button" class="range-btn" data-min="1" data-max="500">1 – 500</button>
+                <button type="button" class="range-btn" data-min="1" data-max="1000">1 – 1000</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="action-buttons">
+          <button class="btn btn-primary" id="btn-create-game">Create Game</button>
+          <button class="btn btn-secondary" id="btn-show-join">Join Game</button>
+        </div>
+      </section>
+
+      <!-- SCREEN 2: JOIN CODE INPUT -->
+      <section id="screen-join" class="screen">
+        <button class="btn-back" id="btn-back-to-landing">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Back
+        </button>
+
+        <div class="form-group">
+          <label for="room-code-input">Enter Room Code</label>
+          <input type="text" id="room-code-input" placeholder="e.g., X7K2P" maxlength="6" autocomplete="off">
+        </div>
+
+        <button class="btn btn-primary btn-block" id="btn-join-room">Join Room</button>
+      </section>
+
+      <!-- SCREEN 3: LOBBY & WAITING -->
+      <section id="screen-lobby" class="screen">
+        <div class="lobby-header">
+          <span class="badge">Lobby</span>
+          <h2>Room Created</h2>
+        </div>
+
+        <div class="room-code-card">
+          <span class="room-code-label">ROOM CODE</span>
+          <span class="room-code-value" id="lobby-room-code">-----</span>
+          <div class="room-code-actions">
+            <button class="btn btn-small" id="btn-copy-code">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              Copy Code
+            </button>
+            <button class="btn btn-small btn-secondary" id="btn-share-code">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+              Share Game
+            </button>
+          </div>
+        </div>
+
+        <div class="players-status">
+          <div class="player-status-row">
+            <span class="player-bullet connected"></span>
+            <span class="player-name" id="lobby-p1-name">Player 1</span>
+            <span class="player-badge">Host</span>
+          </div>
+          <div class="player-status-row">
+            <span class="player-bullet waiting" id="lobby-p2-bullet"></span>
+            <span class="player-name" id="lobby-p2-name">Waiting for opponent...</span>
+          </div>
+        </div>
+
+        <div class="lobby-footer" id="lobby-ready-banner" style="display: none;">
+          <p class="ready-text">✨ Both players are ready!</p>
+        </div>
+      </section>
+
+      <!-- SCREEN 4: SECRET NUMBER SELECTION -->
+      <section id="screen-setup" class="screen">
+        <div class="screen-header">
+          <h2>Choose your secret number</h2>
+          <p class="range-info-text">Select a number between <span id="setup-range-min">1</span> and <span id="setup-range-max">100</span></p>
+        </div>
+
+        <div class="setup-layout" id="setup-controls">
+          <!-- Option A: AUTO -->
+          <div class="setup-option-card">
+            <h3>Option A: Auto Select</h3>
+            <p>Let the system randomly generate a secret number for you.</p>
+            <button class="btn btn-secondary btn-block" id="btn-auto-select">Generate Random Number</button>
+          </div>
+
+          <div class="divider-text">OR</div>
+
+          <!-- Option B: MANUAL -->
+          <div class="setup-option-card">
+            <h3>Option B: Manual Select</h3>
+            <p>Input your own custom secret number.</p>
+            <div class="inline-form">
+              <input type="number" id="manual-number-input" placeholder="e.g., 42">
+              <button class="btn btn-primary" id="btn-lock-number">Lock Number</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Locked Notification (hidden initially) -->
+        <div class="locked-indicator-card" id="setup-locked-card" style="display: none;">
+          <div class="lock-icon-wrapper">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <h3>Number Locked</h3>
+          <p>Your secret number is locked. Waiting for the opponent to lock their number...</p>
+        </div>
+      </section>
+
+      <!-- SCREEN 5: MAIN GUESSING SCREEN -->
+      <section id="screen-game" class="screen">
+        
+        <!-- TURN INDICATOR BANNER -->
+        <div class="turn-banner" id="game-turn-banner">
+          YOUR TURN
+        </div>
+
+        <!-- SPLIT VIEW LAYOUT -->
+        <div class="split-layout">
+          <!-- LEFT: YOU -->
+          <div class="player-panel client-player">
+            <div class="panel-header">
+              <div class="avatar">Y</div>
+              <div>
+                <h3 id="game-p1-name">You</h3>
+                <span class="connection-status connected" id="game-p1-status">Connected</span>
+              </div>
+            </div>
+            <div class="stats-row">
+              <span class="stat-label">Guesses:</span>
+              <span class="stat-value" id="game-p1-guess-count">0</span>
+            </div>
+          </div>
+
+          <!-- RIGHT: OPPONENT -->
+          <div class="player-panel opponent-player">
+            <div class="panel-header">
+              <div class="avatar">O</div>
+              <div>
+                <h3 id="game-p2-name">Opponent</h3>
+                <span class="connection-status connected" id="game-p2-status">Connected</span>
+              </div>
+            </div>
+            <div class="stats-row">
+              <span class="stat-label">Guesses:</span>
+              <span class="stat-value" id="game-p2-guess-count">0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- GUESS INPUT & MAIN ACTION AREA -->
+        <div class="guess-action-card">
+          <h2>Find their secret number</h2>
+          <p class="guess-range-hint">Enter a guess between <span id="game-range-min">1</span> and <span id="game-range-max">100</span></p>
+          
+          <div class="guess-input-group">
+            <input type="number" id="guess-input" placeholder="e.g., 50" autocomplete="off">
+            <button class="btn btn-primary" id="btn-submit-guess">GUESS</button>
+          </div>
+
+          <!-- Active Guess Feedback -->
+          <div class="guess-feedback-alert" id="guess-feedback" style="display: none;">
+            <!-- Will contain feedback like "⬆ HIGHER", "⬇ LOWER", "🎯 CORRECT!" -->
+            -
+          </div>
+        </div>
+
+        <!-- GUESS HISTORY PANEL -->
+        <div class="history-panel">
+          <div class="history-column">
+            <h4>Your Guesses</h4>
+            <ul class="history-list" id="my-history-list">
+              <!-- e.g. <li>40 <span class="arrow">→</span> <span class="result-badge higher">HIGHER</span></li> -->
+            </ul>
+          </div>
+          <div class="history-column">
+            <h4>Opponent Guesses</h4>
+            <ul class="history-list" id="opponent-history-list">
+              <!-- e.g. <li>50 <span class="arrow">→</span> <span class="result-badge lower">LOWER</span></li> -->
+            </ul>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- SCREEN 6: CELEBRATION WIN SCREEN -->
+      <section id="screen-win" class="screen">
+        <div class="win-card">
+          <div class="trophy-emoji">🏆</div>
+          <h2 id="win-headline">YOU FOUND IT!</h2>
+          <p class="win-subtitle" id="win-description">You win!</p>
+
+          <div class="stats-grid">
+            <div class="stat-box">
+              <span class="stat-num" id="win-stat-guesses">0</span>
+              <span class="stat-txt">Guesses</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-num" id="win-stat-duration">0s</span>
+              <span class="stat-txt">Game Time</span>
+            </div>
+          </div>
+
+          <div class="action-buttons">
+            <button class="btn btn-primary" id="btn-restart-game">Play Again</button>
+            <button class="btn btn-secondary" id="btn-leave-game">Leave Game</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 7: DISCONNECT / ERROR SCREEN -->
+      <section id="screen-disconnect" class="screen">
+        <div class="disconnect-card">
+          <div class="disconnect-icon">🔌</div>
+          <h2>Opponent Disconnected</h2>
+          <p>The connection to the other player was lost. You can create a new room or return to the landing page.</p>
+          <button class="btn btn-primary" id="btn-disconnect-restart">Create New Game</button>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Global Toast Alert (For errors/validations) -->
+    <div id="toast" class="toast-notification">
+      Error message here
+    </div>
+
+  </div>
+
+  <!-- Socket.io connection -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
